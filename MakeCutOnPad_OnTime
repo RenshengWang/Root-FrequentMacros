@@ -1,0 +1,79 @@
+// this code comes from Tommy, I copy it to my path for learning. 
+// This kind of cut is very useful when we try to analyze data.
+
+void GeAfterPIDcut(int t_run_num=169, bool from_pid=true)
+{
+  auto filename = TString::Format("run-%d-calibrated.root", t_run_num);
+  TFile file(filename.Data());
+  if(!file.IsOpen())
+  {
+    std::cerr << "Cannot open " << filename << ". Please re-analyze.\n";
+    return;
+  }
+  if(from_pid) std::cout << "Gating on ion chamber dE-ToF PID\n";
+  else std::cout << "Gating on Silicon dE-ToF\n";
+
+  auto tree = (TTree*) file.Get("tr");
+
+  TCanvas c1("c1","c1", 1200, 800);
+  c1.Divide(2,2);
+
+  // draw PID in the first canvas
+  // find the ion chamber dE range
+  tree->Draw("Trusted_dE>>temp(4000, 1400, 3000)", "", "goff");
+  double mean = ((TH2D*) gROOT->FindObject("temp"))->GetMean();
+  double sd = ((TH2D*) gROOT->FindObject("temp"))->GetStdDev();
+  tree->Draw(TString::Format("Trusted_dE>>temp2(4000, %g, %g)", mean - 2*sd, mean + 4*sd).Data(), "", "goff");
+  mean = ((TH2D*) gROOT->FindObject("temp2"))->GetMean();
+  sd = ((TH2D*) gROOT->FindObject("temp2"))->GetStdDev();
+
+  //draw the histograms
+  auto pad1 = c1.cd(1);
+  tree->Draw(TString::Format("Trusted_dE:DTof>>hist(101, -440, -430, 300, %g, %g)", mean - 3.5*sd, mean + 3.5*sd).Data(), "", "colz");
+  auto pad2 = c1.cd(2);
+  tree->Draw("Si_dE:DTof>>SiTof(101, -440, -430, 1000, 1800, 2600)", "", "colz");
+  auto pad3 = c1.cd(3);
+  tree->Draw("Calibrated_Ge>>Ge(2000,0,2000)", "", "hist");
+  pad3->SetLogy();
+  auto pad4 = c1.cd(4);
+  auto button = new TButton("reset", "delete gROOT->FindObject(\"CUTG\");((TCanvas*)gROOT->FindObject(\"c1\"))->cd(1); ((TTree*)gROOT->FindObject(\"tr\"))->Draw(\"Trusted_dE:DTof>>hist\",\"\",\"colz\");((TCanvas*)gROOT->FindObject(\"c1\"))->cd(3); ((TTree*)gROOT->FindObject(\"tr\"))->Draw(\"Calibrated_Ge>>Ge\",\"\",\"hist\");((TCanvas*)gROOT->FindObject(\"c1\"))->cd(2);((TTree*)gROOT->FindObject(\"tr\"))->Draw(\"Si_dE:DTof>>SiTof\",\"\",\"colz\");", 0.3, 0.2, 0.7, 0.4);
+  button -> Draw();
+  auto exitButton = new TButton("USE ME TO EXIT", ".q", 0.1, 0.6, 0.9, 0.8);
+  exitButton -> Draw();
+
+  TCanvas c2("c2", "c2", 1200, 800);
+  if(from_pid) tree->Draw(TString::Format("Trusted_dE:DTof>>hist2(101, -440, -430, 300, %g, %g)", mean - 3.5*sd, mean + 3.5*sd).Data(), "", "colz");
+  else tree->Draw("Si_dE:DTof>>SiTof2(101, -440, -430, 1000, 1800, 2600)", "", "colz");
+
+  // wait for cut in PID
+  // should only exit loop using the exit button
+  while(true)
+  {
+    TCutG* cutg = nullptr;
+    cutg = (TCutG*) c2.WaitPrimitive("CUTG"); // this function will suspend the procedure until the mouse click the key object( "CUTG" );
+    
+    pad3->cd();
+    tree->Draw("Calibrated_Ge>>Ge", "CUTG", "hist"); //this really makes me surprising, when the tree draw the data, the cut can be applied on other data. 
+    pad3->Modified();
+    pad3->Update();
+    if(from_pid)
+    {
+      pad2->cd();
+      tree->Draw("Si_dE:DTof>>SiTof", "CUTG", "colz");
+      pad2->Modified();
+      pad2->Update();
+      pad1->cd();
+      cutg->Draw("same");
+    }
+    else
+    {
+      pad1->cd();
+      tree->Draw("Trusted_dE:DTof>>hist", "CUTG", "colz");
+      pad1->Modified();
+      pad1->Update();
+      pad2->cd();
+      cutg->Draw("same");
+    }
+
+  }
+}
